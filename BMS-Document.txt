@@ -253,7 +253,7 @@ Eclipse Temurin Installer, SonarQube scanner, NodeJS, Docker, Docker Commons, Do
 
 3.2. SonarQube Token Creation
 Configure the SonarQube server;
-Token: squ_69eb05b41575c699579c6ced901eaafae66d63a2
+Token: squ_36b8532d536da3d8c96de9d94ca92d8273cd7da4
 
 3.3. Creation of Credentials
 

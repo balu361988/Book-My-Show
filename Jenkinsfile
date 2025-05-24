@@ -1,19 +1,13 @@
 pipeline {
     agent any
-
     tools {
         jdk 'jdk17'
         nodejs 'node23'
     }
-
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
-        DOCKER_HUB_USER = "balu361988"
-        IMAGE_NAME = "bms"
-        IMAGE_TAG = "latest"
-        FULL_IMAGE_NAME = "${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+        FULL_IMAGE_NAME = 'balu361988/bms:latest'
     }
-
     stages {
         stage('Clean Workspace') {
             steps {
@@ -24,7 +18,7 @@ pipeline {
         stage('Checkout from Git') {
             steps {
                 git branch: 'main', url: 'https://github.com/KastroVKiran/Book-My-Show.git'
-                sh 'ls -la'  // Verify files after checkout
+                sh 'ls -la'
             }
         }
 
@@ -52,7 +46,7 @@ pipeline {
             steps {
                 sh '''
                 cd bookmyshow-app
-                ls -la  # Confirm package.json exists
+                ls -la
                 if [ -f package.json ]; then
                     rm -rf node_modules package-lock.json
                     npm install
@@ -76,10 +70,10 @@ pipeline {
                     withDockerRegistry(credentialsId: 'docker-hub', toolName: 'docker-hub') {
                         sh '''
                         echo "Building Docker image..."
-                        docker build --no-cache -t ${FULL_IMAGE_NAME} -f bookmyshow-app/Dockerfile bookmyshow-app
+                        docker build --no-cache -t balu361988/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
 
                         echo "Pushing Docker image to Docker Hub..."
-                        docker push ${FULL_IMAGE_NAME}
+                        docker push balu361988/bms:latest
                         '''
                     }
                 }
@@ -92,10 +86,8 @@ pipeline {
                     sh '''
                     echo "Applying deployment to Kubernetes..."
 
-                    # Go to the folder containing deployment.yaml if it's not at root
                     cd bookmyshow-app || exit 1
 
-                    # Replace image name if needed
                     sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' deployment.yaml
 
                     kubectl apply -f deployment.yaml --validate=false
@@ -104,8 +96,7 @@ pipeline {
                 }
             }
         }
-
-
+    }
 
     post {
         always {

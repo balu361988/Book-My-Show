@@ -3,14 +3,12 @@ pipeline {
 
     tools {
         jdk 'jdk17'
-        nodejs 'node23'
+        nodejs 'node 23'  // ✅ match the exact configured name in Jenkins global tools
     }
 
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
-        IMAGE_NAME = "balu361988/bms"
-        IMAGE_TAG = "latest"
-        FULL_IMAGE_NAME = "${IMAGE_NAME}:${IMAGE_TAG}"
+        FULL_IMAGE_NAME = 'balu361988/BMS:latest'
     }
 
     stages {
@@ -20,7 +18,7 @@ pipeline {
             }
         }
 
-        stage('Checkout from Git') {
+        stage('Checkout') {
             steps {
                 git branch: 'main', url: 'https://github.com/balu361988/Book-My-Show.git'
                 sh 'ls -la'
@@ -33,13 +31,14 @@ pipeline {
                     sh '''
                     $SCANNER_HOME/bin/sonar-scanner \
                       -Dsonar.projectName=BMS \
-                      -Dsonar.projectKey=BMS
+                      -Dsonar.projectKey=BMS \
+                      -Dsonar.sources=.
                     '''
                 }
             }
         }
 
-        stage('Quality Gate') {
+        stage('Code Quality Gate') {
             steps {
                 script {
                     waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
@@ -47,45 +46,43 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Install NPM Dependencies') {
             steps {
-                sh '''
-                cd bookmyshow-app
-                if [ -f package.json ]; then
-                    rm -rf node_modules package-lock.json
-                    npm install
-                else
-                    echo "Error: package.json not found in bookmyshow-app!"
-                    exit 1
-                fi
-                '''
+                sh 'npm ci'
             }
         }
 
-        stage('OWASP FS Scan') {
+        stage('OWASP Dependency Check') {
             steps {
-                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit', odcInstallation: 'DP-Check'
+                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit --out .', odcInstallation: 'DP-Check'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
 
-        stage('Trivy FS Scan') {
+        stage('Trivy File Scan') {
             steps {
-                sh 'trivy fs . > trivyfs.txt'
+                sh 'trivy fs . > trivy.txt'
             }
         }
 
-        stage('Docker Build & Push') {
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t BMS .'
+            }
+        }
+
+        stage('Docker Image Scan') {
+            steps {
+                sh 'trivy image --format table -o trivy-image-report.html BMS'
+            }
+        }
+
+        stage('Tag & Push to DockerHub') {
             steps {
                 script {
-                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
-                        sh """
-                        echo "Building Docker image..."
-                        docker build --no-cache -t ${FULL_IMAGE_NAME} -f bookmyshow-app/Dockerfile bookmyshow-app
-
-                        echo "Pushing Docker image to Docker Hub..."
-                        docker push ${FULL_IMAGE_NAME}
-                        """
+                    withDockerRegistry(credentialsId: 'docker-hub') {
+                        sh 'docker tag BMS ${FULL_IMAGE_NAME}'
+                        sh 'docker push ${FULL_IMAGE_NAME}'
                     }
                 }
             }
@@ -122,7 +119,7 @@ pipeline {
                 <b>Build URL:</b> <a href='${env.BUILD_URL}'>Click to View</a>
                 """,
                 to: 'kastrokiran@gmail.com',
-                attachmentsPattern: 'trivyfs.txt,trivyimage.txt'
+                attachmentsPattern: 'trivy.txt,trivy-image-report.html'
         }
     }
 }

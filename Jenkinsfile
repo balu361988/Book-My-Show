@@ -1,17 +1,12 @@
 pipeline {
     agent any
-
-tools {
-    jdk 'jdk17'
-    nodejs 'node23'  // Make sure this matches what is in Jenkins > Global Tools
-}
-
-
+    tools {
+        jdk 'jdk17'
+        nodejs 'node23'
+    }
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
-        FULL_IMAGE_NAME = 'balu361988/BMS:latest'
     }
-
     stages {
         stage('Clean Workspace') {
             steps {
@@ -19,10 +14,10 @@ tools {
             }
         }
 
-        stage('Checkout') {
+        stage('Checkout from Git') {
             steps {
-                git branch: 'main', url: 'https://github.com/balu361988/Book-My-Show.git'
-                sh 'ls -la'
+                git branch: 'main', url: 'https://github.com/KastroVKiran/Book-My-Show.git'
+                sh 'ls -la'  // Verify files after checkout
             }
         }
 
@@ -31,15 +26,14 @@ tools {
                 withSonarQubeEnv('sonar-server') {
                     sh '''
                     $SCANNER_HOME/bin/sonar-scanner \
-                      -Dsonar.projectName=BMS \
-                      -Dsonar.projectKey=BMS \
-                      -Dsonar.sources=.
+                    -Dsonar.projectName=BMS \
+                    -Dsonar.projectKey=BMS
                     '''
                 }
             }
         }
 
-        stage('Code Quality Gate') {
+        stage('Quality Gate') {
             steps {
                 script {
                     waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
@@ -47,64 +41,61 @@ tools {
             }
         }
 
-        stage('Install NPM Dependencies') {
+        stage('Install Dependencies') {
             steps {
-                sh 'npm install'
+                sh '''
+                cd bookmyshow-app
+                ls -la  # Confirm package.json exists
+                if [ -f package.json ]; then
+                    rm -rf node_modules package-lock.json
+                    npm install
+                else
+                    echo "Error: package.json not found in bookmyshow-app!"
+                    exit 1
+                fi
+                '''
             }
         }
 
-        stage('OWASP Dependency Check') {
+        stage('Trivy FS Scan') {
             steps {
-                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit --out .', odcInstallation: 'DP-Check'
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                sh 'trivy fs . > trivyfs.txt'
             }
         }
 
-        stage('Trivy File Scan') {
-            steps {
-                sh 'trivy fs . > trivy.txt'
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t BMS .'
-            }
-        }
-
-        stage('Docker Image Scan') {
-            steps {
-                sh 'trivy image --format table -o trivy-image-report.html BMS'
-            }
-        }
-
-        stage('Tag & Push to DockerHub') {
+        stage('Docker Build & Push') {
             steps {
                 script {
-                    withDockerRegistry(credentialsId: 'docker-hub') {
-                        sh 'docker tag BMS ${FULL_IMAGE_NAME}'
-                        sh 'docker push ${FULL_IMAGE_NAME}'
+                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
+                        sh '''
+                        echo "Building Docker image..."
+                        docker build --no-cache -t balu361988/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
+
+                        echo "Pushing Docker image to Docker Hub..."
+                        docker push balu361988/bms:latest
+                        '''
                     }
                 }
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Deploy to Container') {
             steps {
-                script {
-                    sh """
-                    echo "Using image: ${FULL_IMAGE_NAME}"
+                sh '''
+                echo "Stopping and removing old container..."
+                docker stop bms || true
+                docker rm bms || true
 
-                    # Replace image in deployment file
-                    sed -i 's|image: .*|image: ${FULL_IMAGE_NAME}|' deployment.yml
+                echo "Running new container on port 3000..."
+                docker run -d --restart=always --name bms -p 3000:3000 balu361988/bms:latest
 
-                    # Apply the Kubernetes deployment
-                    kubectl apply -f deployment.yml --validate=false
+                echo "Checking running containers..."
+                docker ps -a
 
-                    # Wait for deployment to roll out
-                    kubectl rollout status deployment/bms
-                    """
-                }
+                echo "Fetching logs..."
+                sleep 5
+                docker logs bms
+                '''
             }
         }
     }
@@ -112,15 +103,12 @@ tools {
     post {
         always {
             emailext attachLog: true,
-                subject: "'${currentBuild.result}' Build Notification",
-                body: """
-                <b>Project:</b> ${env.JOB_NAME}<br/>
-                <b>Build Number:</b> ${env.BUILD_NUMBER}<br/>
-                <b>Status:</b> ${currentBuild.result}<br/>
-                <b>Build URL:</b> <a href='${env.BUILD_URL}'>Click to View</a>
-                """,
+                subject: "'${currentBuild.result}'",
+                body: "Project: ${env.JOB_NAME}<br/>" +
+                      "Build Number: ${env.BUILD_NUMBER}<br/>" +
+                      "URL: ${env.BUILD_URL}<br/>",
                 to: 'kastrokiran@gmail.com',
-                attachmentsPattern: 'trivy.txt,trivy-image-report.html'
+                attachmentsPattern: 'trivyfs.txt'
         }
     }
 }

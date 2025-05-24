@@ -1,10 +1,11 @@
 pipeline {
     agent any
 
-    tools {
-        jdk 'jdk17'
-        nodejs 'node 23'  // ✅ match the exact configured name in Jenkins global tools
-    }
+tools {
+    jdk 'jdk17'
+    nodejs 'node23'  // Make sure this matches what is in Jenkins > Global Tools
+}
+
 
     environment {
         SCANNER_HOME = tool 'sonar-scanner'

@@ -49,7 +49,7 @@ tools {
 
         stage('Install NPM Dependencies') {
             steps {
-                sh 'npm ci'
+                sh 'npm install'
             }
         }
 

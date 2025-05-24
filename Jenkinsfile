@@ -79,26 +79,25 @@ pipeline {
             }
         }
 
-        stage('Deploy to Container') {
-            steps {
-                sh '''
-                echo "Stopping and removing old container..."
-                docker stop bms || true
-                docker rm bms || true
+        stage('Deploy to Kubernetes') {
+    steps {
+        script {
+            sh '''
+                echo "Updating Kubernetes deployment with image: $FULL_IMAGE_NAME"
 
-                echo "Running new container on port 3000..."
-                docker run -d --restart=always --name bms -p 3000:3000 balu361988/bms:latest
+                # Replace image name in deployment.yaml
+                sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' deployment.yaml
 
-                echo "Checking running containers..."
-                docker ps -a
+                # Apply updated manifest to Kubernetes
+                kubectl apply -f deployment.yaml --validate=false
 
-                echo "Fetching logs..."
-                sleep 5
-                docker logs bms
-                '''
-            }
+                # Wait for rollout to complete
+                kubectl rollout status deployment/balu361988-bms --timeout=60s
+            '''
         }
     }
+}
+
 
     post {
         always {

@@ -90,21 +90,22 @@ pipeline {
             steps {
                 script {
                     sh '''
-                    echo "Updating Kubernetes deployment with image: $FULL_IMAGE_NAME"
+                    echo "Applying deployment to Kubernetes..."
 
-                    # Replace image name in deployment.yaml
+                    # Go to the folder containing deployment.yaml if it's not at root
+                    cd bookmyshow-app || exit 1
+
+                    # Replace image name if needed
                     sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' deployment.yaml
 
-                    # Apply updated manifest to Kubernetes
                     kubectl apply -f deployment.yaml --validate=false
-
-                    # Wait for rollout to complete
-                    kubectl rollout status deployment/balu361988-bms --timeout=60s
+                    kubectl rollout status deployment/bms-app --timeout=60s
                     '''
                 }
             }
         }
-    }
+
+
 
     post {
         always {

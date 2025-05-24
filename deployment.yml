@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: bms-container
-        image: balu361988:latest
+        image: balu361988/bms:latest   # ✅ Fixed image name
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
@@ -40,7 +40,6 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
 ---
-# Service for Cloud or Minikube
 apiVersion: v1
 kind: Service
 metadata:
@@ -54,5 +53,5 @@ spec:
   ports:
     - protocol: TCP
       port: 3000
-      targetPort: 31000
+      targetPort: 3000   # ✅ Fixed to match containerPort
 

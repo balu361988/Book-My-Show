@@ -1,56 +1,96 @@
 pipeline {
     agent any
-
-    environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub')  // Jenkins credential ID
-        DOCKER_IMAGE = "balu361988/bms:latest"
+    tools {
+        jdk 'jdk17'
+        nodejs 'node23'
     }
-
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+        FULL_IMAGE_NAME = 'balu361988/bms:latest'
+    }
     stages {
-        stage('Checkout') {
+        stage('Clean Workspace') {
             steps {
-                git 'https://github.com/balu361988/Book-My-Show.git'
+                cleanWs()
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Checkout from Git') {
             steps {
-                dir('bookmyshow-app') {
+                git branch: 'main', url: 'https://github.com/KastroVKiran/Book-My-Show.git'
+                sh 'ls -la'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar-server') {
                     sh '''
-                    rm -rf node_modules package-lock.json
-                    npm install
+                    $SCANNER_HOME/bin/sonar-scanner \
+                    -Dsonar.projectName=BMS \
+                    -Dsonar.projectKey=BMS
                     '''
                 }
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                dir('bookmyshow-app') {
-                    script {
-                        sh "docker build -t ${DOCKER_IMAGE} ."
-                    }
-                }
-            }
-        }
-
-        stage('Push Docker Image') {
+        stage('Quality Gate') {
             steps {
                 script {
-                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub') {
-                        sh "docker push ${DOCKER_IMAGE}"
+                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                cd bookmyshow-app
+                ls -la
+                if [ -f package.json ]; then
+                    rm -rf node_modules package-lock.json
+                    npm install
+                else
+                    echo "Error: package.json not found in bookmyshow-app!"
+                    exit 1
+                fi
+                '''
+            }
+        }
+
+        stage('Trivy FS Scan') {
+            steps {
+                sh 'trivy fs . > trivyfs.txt'
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-hub', toolName: 'docker-hub') {
+                        sh '''
+                        echo "Building Docker image..."
+                        docker build --no-cache -t balu361988/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
+
+                        echo "Pushing Docker image to Docker Hub..."
+                        docker push balu361988/bms:latest
+                        '''
                     }
                 }
             }
         }
 
-        stage('Update Kubernetes Deployment') {
+        stage('Deploy to Kubernetes') {
             steps {
-                dir('bookmyshow-app') {
+                script {
                     sh '''
-                    echo "Updating deployment.yaml with image: ${DOCKER_IMAGE}"
-                    sed -i "s|image: .*|image: ${DOCKER_IMAGE}|" deployment.yaml
-                    kubectl apply -f deployment.yaml
+                    echo "Applying deployment to Kubernetes..."
+
+
+                    sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' deployment.yaml
+
+                    kubectl apply -f deployment.yaml --validate=false
+                    kubectl rollout status deployment/bms-app --timeout=60s
                     '''
                 }
             }
@@ -58,16 +98,14 @@ pipeline {
     }
 
     post {
-        success {
-            emailext to: 'kastrokiran@gmail.com',
-                     subject: 'Jenkins Job SUCCESS: Book-My-Show',
-                     body: 'Pipeline completed successfully ✅'
-        }
-
-        failure {
-            emailext to: 'kastrokiran@gmail.com',
-                     subject: 'Jenkins Job FAILURE: Book-My-Show',
-                     body: 'Pipeline failed ❌'
+        always {
+            emailext attachLog: true,
+                subject: "'${currentBuild.result}'",
+                body: "Project: ${env.JOB_NAME}<br/>" +
+                      "Build Number: ${env.BUILD_NUMBER}<br/>" +
+                      "URL: ${env.BUILD_URL}<br/>",
+                to: 'kastrokiran@gmail.com',
+                attachmentsPattern: 'trivyfs.txt'
         }
     }
 }

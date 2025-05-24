@@ -1,44 +1,15 @@
 pipeline {
     agent any
-    tools {
-        jdk 'jdk17'
-        nodejs 'node23'
-    }
+
     environment {
-        SCANNER_HOME = tool 'sonar-scanner'
-        FULL_IMAGE_NAME = "balu361988/bms:latest"
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')  // Jenkins credential ID
+        DOCKER_IMAGE = "balu361988/bms:latest"
     }
+
     stages {
-        stage('Clean Workspace') {
+        stage('Checkout') {
             steps {
-                cleanWs()
-            }
-        }
-
-        stage('Checkout from Git') {
-            steps {
-                git branch: 'main', url: 'https://github.com/KastroVKiran/Book-My-Show.git'
-                sh 'ls -la'  // Verify files after checkout
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('sonar-server') {
-                    sh """
-                    $SCANNER_HOME/bin/sonar-scanner \
-                    -Dsonar.projectName=BMS \
-                    -Dsonar.projectKey=BMS
-                    """
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                script {
-                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
-                }
+                git 'https://github.com/balu361988/Book-My-Show.git'
             }
         }
 
@@ -46,5 +17,58 @@ pipeline {
             steps {
                 dir('bookmyshow-app') {
                     sh '''
-                    ls -la
+                    rm -rf node_modules package-lock.json
+                    npm install
+                    '''
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                dir('bookmyshow-app') {
+                    script {
+                        sh "docker build -t ${DOCKER_IMAGE} ."
+                    }
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub') {
+                        sh "docker push ${DOCKER_IMAGE}"
+                    }
+                }
+            }
+        }
+
+        stage('Update Kubernetes Deployment') {
+            steps {
+                dir('bookmyshow-app') {
+                    sh '''
+                    echo "Updating deployment.yaml with image: ${DOCKER_IMAGE}"
+                    sed -i "s|image: .*|image: ${DOCKER_IMAGE}|" deployment.yaml
+                    kubectl apply -f deployment.yaml
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext to: 'kastrokiran@gmail.com',
+                     subject: 'Jenkins Job SUCCESS: Book-My-Show',
+                     body: 'Pipeline completed successfully ✅'
+        }
+
+        failure {
+            emailext to: 'kastrokiran@gmail.com',
+                     subject: 'Jenkins Job FAILURE: Book-My-Show',
+                     body: 'Pipeline failed ❌'
+        }
+    }
+}
 

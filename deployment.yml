@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: bms-container
-        image: balu361988/bms:latest
+        image: balu361988:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 3000

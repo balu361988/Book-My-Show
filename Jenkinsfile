@@ -80,23 +80,24 @@ pipeline {
             }
         }
 
-        stage('Deploy to Kubernetes') {
-            steps {
-                script {
-                    sh '''
-                    echo "Applying deployment to Kubernetes..."
+stage('Deploy to Kubernetes') {
+    steps {
+        script {
+            sh '''
+            echo "Applying deployment to Kubernetes..."
 
-                    cd bookmyshow-app || exit 1
+            sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' bookmyshow-app/deployment.yaml
 
-                    sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' deployment.yaml
-
-                    kubectl apply -f deployment.yaml --validate=false
-                    kubectl rollout status deployment/bms-app --timeout=60s
-                    '''
-                }
-            }
+            kubectl apply -f bookmyshow-app/deployment.yaml --validate=false
+            kubectl rollout status deployment/bms-app --timeout=60s
+            '''
         }
     }
+}
+
+
+
+
 
     post {
         always {

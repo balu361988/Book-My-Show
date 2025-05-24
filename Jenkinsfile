@@ -6,7 +6,7 @@ pipeline {
     }
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
-        FULL_IMAGE_NAME = 'balu361988/bms:latest'
+        FULL_IMAGE_NAME = "balu361988/bms:latest"
     }
     stages {
         stage('Clean Workspace') {
@@ -18,18 +18,18 @@ pipeline {
         stage('Checkout from Git') {
             steps {
                 git branch: 'main', url: 'https://github.com/KastroVKiran/Book-My-Show.git'
-                sh 'ls -la'
+                sh 'ls -la'  // Verify files after checkout
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('sonar-server') {
-                    sh '''
+                    sh """
                     $SCANNER_HOME/bin/sonar-scanner \
                     -Dsonar.projectName=BMS \
                     -Dsonar.projectKey=BMS
-                    '''
+                    """
                 }
             }
         }
@@ -44,71 +44,7 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh '''
-                cd bookmyshow-app
-                ls -la
-                if [ -f package.json ]; then
-                    rm -rf node_modules package-lock.json
-                    npm install
-                else
-                    echo "Error: package.json not found in bookmyshow-app!"
-                    exit 1
-                fi
-                '''
-            }
-        }
-
-        stage('Trivy FS Scan') {
-            steps {
-                sh 'trivy fs . > trivyfs.txt'
-            }
-        }
-
-        stage('Docker Build & Push') {
-            steps {
-                script {
-                    withDockerRegistry(credentialsId: 'docker-hub', toolName: 'docker-hub') {
-                        sh '''
-                        echo "Building Docker image..."
-                        docker build --no-cache -t balu361988/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
-
-                        echo "Pushing Docker image to Docker Hub..."
-                        docker push balu361988/bms:latest
-                        '''
-                    }
-                }
-            }
-        }
-
-stage('Deploy to Kubernetes') {
-    steps {
-        script {
-            sh '''
-            echo "Applying deployment to Kubernetes..."
-
-            sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' bookmyshow-app/deployment.yaml
-
-            kubectl apply -f bookmyshow-app/deployment.yaml --validate=false
-            kubectl rollout status deployment/bms-app --timeout=60s
-            '''
-        }
-    }
-}
-
-
-
-
-
-    post {
-        always {
-            emailext attachLog: true,
-                subject: "'${currentBuild.result}'",
-                body: "Project: ${env.JOB_NAME}<br/>" +
-                      "Build Number: ${env.BUILD_NUMBER}<br/>" +
-                      "URL: ${env.BUILD_URL}<br/>",
-                to: 'kastrokiran@gmail.com',
-                attachmentsPattern: 'trivyfs.txt'
-        }
-    }
-}
+                dir('bookmyshow-app') {
+                    sh '''
+                    ls -la
 

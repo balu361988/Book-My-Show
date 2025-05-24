@@ -1,12 +1,19 @@
 pipeline {
     agent any
+
     tools {
         jdk 'jdk17'
         nodejs 'node23'
     }
+
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
+        DOCKER_HUB_USER = "balu361988"
+        IMAGE_NAME = "bms"
+        IMAGE_TAG = "latest"
+        FULL_IMAGE_NAME = "${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
     }
+
     stages {
         stage('Clean Workspace') {
             steps {
@@ -69,10 +76,10 @@ pipeline {
                     withDockerRegistry(credentialsId: 'docker-hub', toolName: 'docker-hub') {
                         sh '''
                         echo "Building Docker image..."
-                        docker build --no-cache -t balu361988/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
+                        docker build --no-cache -t ${FULL_IMAGE_NAME} -f bookmyshow-app/Dockerfile bookmyshow-app
 
                         echo "Pushing Docker image to Docker Hub..."
-                        docker push balu361988/bms:latest
+                        docker push ${FULL_IMAGE_NAME}
                         '''
                     }
                 }
@@ -80,24 +87,24 @@ pipeline {
         }
 
         stage('Deploy to Kubernetes') {
-    steps {
-        script {
-            sh '''
-                echo "Updating Kubernetes deployment with image: $FULL_IMAGE_NAME"
+            steps {
+                script {
+                    sh '''
+                    echo "Updating Kubernetes deployment with image: $FULL_IMAGE_NAME"
 
-                # Replace image name in deployment.yaml
-                sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' deployment.yaml
+                    # Replace image name in deployment.yaml
+                    sed -i 's|image: .*|image: '"$FULL_IMAGE_NAME"'|' deployment.yaml
 
-                # Apply updated manifest to Kubernetes
-                kubectl apply -f deployment.yaml --validate=false
+                    # Apply updated manifest to Kubernetes
+                    kubectl apply -f deployment.yaml --validate=false
 
-                # Wait for rollout to complete
-                kubectl rollout status deployment/balu361988-bms --timeout=60s
-            '''
+                    # Wait for rollout to complete
+                    kubectl rollout status deployment/balu361988-bms --timeout=60s
+                    '''
+                }
+            }
         }
     }
-}
-
 
     post {
         always {

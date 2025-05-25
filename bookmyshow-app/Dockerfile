@@ -1,13 +1,20 @@
-# Build Stage
-FROM node:18 as builder
-WORKDIR /app
-COPY . .
-RUN npm install
-RUN npm run build
+FROM node:18-alpine
 
-# Production Stage
-FROM nginx:alpine
-COPY --from=builder /app/build /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+# Set working directory
+WORKDIR /app
+
+# Copy package definition and lock files
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy all application source code
+COPY . .
+
+# Expose the app port
+EXPOSE 3000
+
+# Start the app
+CMD ["npm", "start"]
 

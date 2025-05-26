@@ -58,6 +58,19 @@ pipeline {
             }
         }
 
+        stage('OWASP Dependency-Check') {
+            steps {
+                sh '''
+                echo "Running OWASP Dependency Check..."
+                mkdir -p dependency-check-report
+                dependency-check.sh --project "BookMyShow" \
+                                    --scan bookmyshow-app \
+                                    --out dependency-check-report \
+                                    --format HTML || true
+                '''
+            }
+        }
+
         stage('Trivy FS Scan') {
             steps {
                 sh 'trivy fs . > trivyfs.txt'
@@ -109,7 +122,7 @@ pipeline {
                       "Build Number: ${env.BUILD_NUMBER}<br/>" +
                       "URL: ${env.BUILD_URL}<br/>",
                 to: 'kastrokiran@gmail.com',
-                attachmentsPattern: 'trivyfs.txt'
+                attachmentsPattern: 'trivyfs.txt, dependency-check-report/dependency-check-report.html'
         }
     }
 }

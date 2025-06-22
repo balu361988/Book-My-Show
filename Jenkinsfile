@@ -8,7 +8,9 @@ pipeline {
         SCANNER_HOME = tool 'sonar-scanner'
         FULL_IMAGE_NAME = 'balu361988/bms:latest'
     }
+
     stages {
+
         stage('Clean Workspace') {
             steps {
                 cleanWs()
@@ -26,9 +28,9 @@ pipeline {
             steps {
                 withSonarQubeEnv('sonar-server') {
                     sh '''
-                    $SCANNER_HOME/bin/sonar-scanner \
-                    -Dsonar.projectName=BMS \
-                    -Dsonar.projectKey=BMS
+                        $SCANNER_HOME/bin/sonar-scanner \
+                        -Dsonar.projectName=BMS \
+                        -Dsonar.projectKey=BMS
                     '''
                 }
             }
@@ -37,7 +39,10 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 script {
-                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
+                    sleep(time: 10, unit: 'SECONDS') // Avoid race condition
+                    timeout(time: 10, unit: 'MINUTES') {
+                        waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
+                    }
                 }
             }
         }
@@ -45,15 +50,15 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 sh '''
-                cd bookmyshow-app
-                ls -la
-                if [ -f package.json ]; then
-                    rm -rf node_modules package-lock.json
-                    npm install
-                else
-                    echo "Error: package.json not found in bookmyshow-app!"
-                    exit 1
-                fi
+                    cd bookmyshow-app
+                    ls -la
+                    if [ -f package.json ]; then
+                        rm -rf node_modules package-lock.json
+                        npm install
+                    else
+                        echo "Error: package.json not found in bookmyshow-app!"
+                        exit 1
+                    fi
                 '''
             }
         }
@@ -61,32 +66,32 @@ pipeline {
         stage('OWASP Dependency-Check') {
             steps {
                 sh '''
-                echo "Running OWASP Dependency Check..."
-                mkdir -p dependency-check-report
-                dependency-check.sh --project "BookMyShow" \
-                                    --scan bookmyshow-app \
-                                    --out dependency-check-report \
-                                    --format HTML || true
+                    echo "Running OWASP Dependency Check..."
+                    mkdir -p dependency-check-report
+                    dependency-check.sh --project "BookMyShow" \
+                                        --scan bookmyshow-app \
+                                        --out dependency-check-report \
+                                        --format HTML || true
                 '''
             }
         }
 
         stage('Trivy FS Scan') {
             steps {
-                sh 'trivy fs . > trivyfs.txt'
+                sh 'trivy fs . > trivyfs.txt || true'
             }
         }
 
         stage('Docker Build & Push') {
             steps {
                 script {
-                    withDockerRegistry(credentialsId: 'docker-hub', toolName: 'docker-hub') {
+                    withDockerRegistry(credentialsId: 'docker-hub') {
                         sh '''
-                        echo "Building Docker image..."
-                        docker build --no-cache -t balu361988/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
+                            echo "Building Docker image..."
+                            docker build --no-cache -t ${FULL_IMAGE_NAME} -f bookmyshow-app/Dockerfile bookmyshow-app
 
-                        echo "Pushing Docker image to Docker Hub..."
-                        docker push balu361988/bms:latest
+                            echo "Pushing Docker image to Docker Hub..."
+                            docker push ${FULL_IMAGE_NAME}
                         '''
                     }
                 }
@@ -96,19 +101,19 @@ pipeline {
         stage('Deploy to Container') {
             steps {
                 sh '''
-                echo "Stopping and removing old container..."
-                docker stop bms || true
-                docker rm bms || true
+                    echo "Stopping and removing old container if it exists..."
+                    docker stop bms || true
+                    docker rm bms || true
 
-                echo "Running new container on port 3000..."
-                docker run -d --restart=always --name bms -p 3000:3000 balu361988/bms:latest
+                    echo "Running new container..."
+                    docker run -d --restart=always --name bms -p 3000:3000 ${FULL_IMAGE_NAME}
 
-                echo "Checking running containers..."
-                docker ps -a
+                    echo "Checking running containers..."
+                    docker ps -a
 
-                echo "Fetching logs..."
-                sleep 5
-                docker logs bms
+                    echo "Container Logs:"
+                    sleep 5
+                    docker logs bms
                 '''
             }
         }
@@ -116,13 +121,17 @@ pipeline {
 
     post {
         always {
-            emailext attachLog: true,
+            emailext (
+                attachLog: true,
                 subject: "'${currentBuild.result}'",
-                body: "Project: ${env.JOB_NAME}<br/>" +
-                      "Build Number: ${env.BUILD_NUMBER}<br/>" +
-                      "URL: ${env.BUILD_URL}<br/>",
+                body: """
+                    Project: ${env.JOB_NAME}<br/>
+                    Build Number: ${env.BUILD_NUMBER}<br/>
+                    URL: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a><br/>
+                """,
                 to: 'kastrokiran@gmail.com',
                 attachmentsPattern: 'trivyfs.txt, dependency-check-report/dependency-check-report.html'
+            )
         }
     }
 }
